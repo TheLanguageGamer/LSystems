@@ -17,6 +17,7 @@ class LSystem {
 	angle : number;
 	startingPos : Pos;
 	maxSteps : number;
+	highlightIndex : number = -1;
 
 	constructor(obj : {
 		start : string,
@@ -81,6 +82,12 @@ class LSystem {
 		this.length /= 2;
 	}
 
+	fastforward() {
+		while (this.currentStep < this.maxSteps) {
+			this.advance();
+		}
+	}
+
 	render(ctx : CanvasRenderingContext2D, cp : ContentProvider) {
 		let stack : {pos : Pos, angle : number}[] = [];
 		stack.push({
@@ -97,6 +104,7 @@ class LSystem {
 
 		ctx.beginPath();
 		ctx.lineWidth = 1;
+		ctx.strokeStyle = Constants.Colors.Black;
 		ctx.moveTo(pos.x, pos.y);
 
 		for (let i = 0; i < this.state.length; ++i) {
@@ -106,12 +114,37 @@ class LSystem {
 					x : pos.x + length*Math.cos(angle),
 					y : pos.y + length*Math.sin(angle),
 				}
+				if (i == this.highlightIndex) {
+					ctx.stroke();
+					ctx.strokeStyle = Constants.Colors.Green.NCS;
+					ctx.lineWidth = 3;
+					ctx.beginPath();
+					ctx.moveTo(pos.x, pos.y);
+				}
 				ctx.lineTo(newPos.x, newPos.y);
+				if (i == this.highlightIndex) {
+					ctx.stroke();
+					ctx.strokeStyle = Constants.Colors.Black;
+					ctx.lineWidth = 1;
+					ctx.beginPath();
+					ctx.moveTo(newPos.x, newPos.y);
+				}
 				pos = newPos;
-			} else if (c == "+") {
-				angle -= angleDelta;
-			} else if (c == "-") {
-				angle += angleDelta;
+			} else if (c == "+" || c == "-") {
+				let newAngle = angle + angleDelta * (c == "+" ? -1 : 1);
+				if (i == this.highlightIndex) {
+					ctx.stroke();
+					ctx.strokeStyle = Constants.Colors.Red.NCS;
+					ctx.lineWidth = 3;
+					ctx.beginPath();
+					ctx.arc(pos.x, pos.y, length/3, angle, newAngle, c == "+");
+					ctx.stroke();
+					ctx.strokeStyle = Constants.Colors.Black;
+					ctx.lineWidth = 1;
+					ctx.beginPath();
+					ctx.moveTo(pos.x, pos.y);
+				}
+				angle = newAngle;
 			} else if (c == "[") {
 				stack.push({
 					pos : pos,
@@ -190,6 +223,56 @@ class CFGRuleInput {
 	}
 }
 
+class LabeledTextInput {
+
+	layout : Layout;
+	children : Component[] = [];
+	input : TextInput;
+
+	constructor(obj : {
+		layout : Layout,
+		labelText : string,
+		initialInputText : string,
+		textInputType? : TextInputType,
+	}) {
+		this.layout = obj.layout;
+
+		let fontSize = 14;
+		let labeledTextInputX = 0;
+		let label = new TextLabel(new Layout(
+			0, 0, labeledTextInputX, 0,
+			0, 0, 0, 0,
+		), obj.labelText);
+		label.setFontSize(14);
+		label.fillStyle = Constants.Colors.Black;
+
+		labeledTextInputX += 5 + label.getFontSize()*label.text.length*0.7;
+
+		let textInput = new TextInput(
+			new Layout(
+				0, 0, labeledTextInputX, 0,
+				0, 0, fontSize*obj.labelText.length*0.7, fontSize,
+			),
+			{},
+			obj.initialInputText
+		);
+		textInput.setFontSize(fontSize);
+		textInput.fillStyle = Constants.Colors.Black;
+		if (obj.textInputType != undefined) {
+			textInput.textInputType = obj.textInputType;
+		}
+
+		this.children.push(label);
+		this.children.push(textInput);
+
+		this.input = textInput;
+	}
+
+	render(ctx : CanvasRenderingContext2D, cp : ContentProvider) {
+		
+	}
+}
+
 class LabeledCounter {
 	
 	layout : Layout;
@@ -204,6 +287,7 @@ class LabeledCounter {
 		initialCount : number,
 		minCount : number,
 		maxCount : number,
+		labelText : string
 		onCountChanged : (newCount : number) => void,
 	}) {
 		let _this = this;
@@ -216,7 +300,7 @@ class LabeledCounter {
 		let label = new TextLabel(new Layout(
 			0, 0, labeledCounterX, 0,
 			0, 0, 0, 0,
-		), "Iteration:");
+		), obj.labelText);
 		label.setFontSize(14);
 		label.fillStyle = Constants.Colors.Black;
 
@@ -354,7 +438,7 @@ class Main {
 					},
 				],
 				angle : Math.PI/2,
-				startingPos : {x : 0.5, y : 0.4},
+				startingPos : {x : 0.7, y : 0.5},
 				startingLength : 100,
 				maxSteps : 5,
 			},
@@ -399,13 +483,48 @@ class Main {
 			0, 0, 0, 0,
 			1, 1, -200, 0
 		);
+		lsystem.fastforward();
 
+		let stateFontSize = 18;
+		let charWidth = stateFontSize*0.6;
 		let lsystemStateLabel = new TextLabel(new Layout(
-			0, 0, 10, 50,
-			0, 0, 0, 0
+			0, 0, 100, 50,
+			1, 0, 0, stateFontSize
 		), lsystem.state);
-		lsystemStateLabel.setFontSize(18);
+		lsystemStateLabel.setFontSize(stateFontSize);
 		lsystemStateLabel.fillStyle = Constants.Colors.Black;
+
+		let stateLabelUnderline = new Rectangle(new Layout(
+			0, 1, 0, 0,
+			0, 0, charWidth, 5
+		));
+		stateLabelUnderline.strokeColor = undefined;
+		stateLabelUnderline.fillColor = Constants.Colors.Blue.Pure;
+		stateLabelUnderline.layout.visible = false;
+
+		lsystemStateLabel.children = [];
+		lsystemStateLabel.children.push(stateLabelUnderline);
+
+		lsystemStateLabel.onMouseMove = function(e : MouseEvent) {
+			stateLabelUnderline.layout.visible = true;
+			let x = e.offsetX - lsystemStateLabel.layout.computed.position.x;
+			let index = Math.floor(x/charWidth);
+			if (index < lsystem.state.length) {
+				let underlineXPosition = charWidth*index;
+				stateLabelUnderline.layout.offset.position.x = underlineXPosition;
+				stateLabelUnderline.layout.doLayout(lsystemStateLabel.layout.computed);
+				lsystem.highlightIndex = index;
+			} else {
+				stateLabelUnderline.layout.visible = false;
+				lsystem.highlightIndex = -1;
+			}
+
+			return true;
+		}
+		lsystemStateLabel.onMouseOut = function(e : MouseEvent) {
+			stateLabelUnderline.layout.visible = false;
+				lsystem.highlightIndex = -1;
+		}
 
 		let configurationsDisplay = new Container();
 		configurationsDisplay.layout = new Layout(
@@ -419,11 +538,12 @@ class Main {
 		let iterationContainer = new LabeledCounter({
 			layout : new Layout(
 				0, 0, 0, 10,
-				0, 0, 0, 40
+				0, 0, 0, 25
 			),
 			initialCount : iterationCount,
 			minCount : 0,
 			maxCount : 10,
+			labelText : "Iteration:",
 			onCountChanged(newCount : number) {
 				lsystem.maxSteps = newCount;
 				if (newCount < lsystem.currentStep) {
@@ -437,8 +557,40 @@ class Main {
 				lsystemStateLabel.text = lsystem.state;
 			},
 		});
-		iterationContainer.layout.anchor = {x : 1.0, y : 0};
+		iterationContainer.layout.anchor = {x : 0.0, y : 0};
 		configurationsDisplay.children.push(iterationContainer);
+
+		let angleLabeledTextInput = new LabeledTextInput({
+			layout : new Layout(
+				0, 0, 0, 10,
+				0, 0, 0, 25,
+			),
+			labelText : "Angle (degrees):",
+			initialInputText : Math.round(360*lsystem.angle/(2*Math.PI)).toString(),
+			textInputType : TextInputType.Integer,
+		});
+		configurationsDisplay.children.push(angleLabeledTextInput);
+
+		// let startingLengthLabeledTextInput = new LabeledTextInput({
+		// 	layout : new Layout(
+		// 		0, 0, 0, 10,
+		// 		0, 0, 0, 25,
+		// 	),
+		// 	labelText : "Angle (degrees):",
+		// 	initialInputText : lsystem.startingLength,
+		// 	textInputType : TextInputType.Integer,
+		// });
+		// configurationsDisplay.children.push(startingLengthLabeledTextInput);
+
+		let startLabeledTextInput = new LabeledTextInput({
+			layout : new Layout(
+				0, 0, 0, 10,
+				0, 0, 0, 25,
+			),
+			labelText : "Axiom:",
+			initialInputText : lsystem.start,
+		});
+		configurationsDisplay.children.push(startLabeledTextInput);
 
 		let cfgRuleInputs : CFGRuleInput[] = [];
 		for (let j = 0; j < 4; ++j) {
@@ -469,6 +621,13 @@ class Main {
 				onSelectionChanged(index : number, option : Option) {
 					console.log("Selected!", index, option.label);
 					lsystem.reset(configurations[index]);
+					lsystem.fastforward();
+					lsystemStateLabel.text = lsystem.state;
+					iterationContainer.setCount(lsystem.currentStep);
+
+					let angle = Math.round(360*lsystem.angle/(2*Math.PI));
+					angleLabeledTextInput.input.setText(angle.toString());
+					startLabeledTextInput.input.setText(lsystem.start);
 					for (let j = 0; j < cfgRuleInputs.length; ++j) {
 						let cfgRuleInput = cfgRuleInputs[j];
 						if (j >= lsystem.rules.length) {
